@@ -26,16 +26,21 @@ class BlackHoleError(Exception):
         super().__init__(self.message)
 
 
+SIMULATE_START_TIME:int = int(time.time() * 1000)
     
 # sleep control
 def sleep_ms(duration:int):
     time.sleep(duration / 1000)
-  
-simulate_start_time:int = int(time.time() * 1000)
-    
+
 # clock
-def now_ms():
-    return int(time.time() * 1000) - simulate_start_time
+def now_ms(basetime:int = SIMULATE_START_TIME):
+    return int(time.time() * 1000) - basetime
+
+def sleep_until_ms(wake_up_time:int, basetime:int = SIMULATE_START_TIME):
+    sleep_ms(wake_up_time - now_ms(basetime))    
+
+
+
     
 
 class Buffer:
@@ -92,6 +97,7 @@ class Buffer:
     def record_one(self):
         self.pack_num_list.append(self.pack_num)
         self.time_list.append(now_ms())
+        print(f"{self.__class__.__name__} --- time:{self.time_list[-1]} --- pack:{self.pack_num_list[-1]}")
 
     def gen_log(self):
         plt.figure(figsize=(10, 6))
@@ -117,49 +123,41 @@ class BlackHoleBuffer(Buffer):
     def remove_all():
         pass
     
-    def record_one():
+    def record_one(place_holder):
         pass
 
-
+BLACK_HOLE = BlackHoleBuffer()
 
 class Application:
     
-    def __init__(self ,app_buf:Buffer, ker_buf:Buffer, time_loc:int, time_scale:int, packet_loc:int, packet_scale:int, name:str = "unknown_app"):
+    def __init__(self ,app_buf:Buffer, time_loc:int, time_scale:int, packet_loc:int, packet_scale:int, name:str = "unknown_app"):
         self.name = name
         self.app_buf:Buffer = app_buf
-        self.ker_bufLBuffer = ker_buf
         self.time_loc:int = time_loc
         self.time_scale:int = time_scale
         self.packet_loc:int  = packet_loc
         self.packet_scale:int = packet_scale
         
-    def start_t(self, end_time:int):
-        self.end_time:int = end_time
         
-    def set_call_ker_buf(self, time_interval:int):
-        while(now_ms() < self.end_time):
-            
-            sleep_ms(time_interval)
-            
-        
-    def set_use_app_buf(self):
+    def ready(self, start_time:int, end_time:int, basetime:int = SIMULATE_START_TIME):
         now:int = 0
         next_wait = []
         next_consume = []
-        while(now < self.end_time):
+        sleep_until_ms(wake_up_time = start_time, basetime = basetime)
+        while(now_ms() < end_time):
             next_wait = int(np.random.normal(self.time_loc, self.time_scale, 1)[0])
             next_consume = int(np.round(np.random.normal(self.packet_loc, self.packet_scale, 1)[0]))
             sleep_ms(next_wait)
             now = now + next_wait
-            self.app_buf.remove(next_consume)
-            print(f"now: {now}")
-            print(f"app consume {next_consume} packets")
-            print(f"there are still {self.app_buf.getSize()} packet in app_buf")
+            Buffer.move_packet(self.app_buf, BLACK_HOLE, next_consume)
+            
+            
+        
 
 
-print("sdfsdf")
-black_hole = BlackHoleBuffer()
-    
+
+
+
             
             
             
