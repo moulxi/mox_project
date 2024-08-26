@@ -2,7 +2,6 @@ import numpy as np
 import time
 import math
 import matplotlib.pyplot as plt
-import config
 
 # exception definition
 class MoxError(Exception):
@@ -12,26 +11,64 @@ class MoxError(Exception):
 
     def __str__(self):
         return f'{self.message}'
+    
+class BufferError(Exception):
+    def __init__(self, message="Buffer overflow or there is negative number of packet"):
+        self.message = message
+        super().__init__(self.message)
 
-def move_all_packet(source, dest):
-    num:int = source.getSize()
-    source.clean()
-    dest.add(num)
+    def __str__(self):
+        return f'{self.message}'
+    
+class BlackHoleError(Exception):
+    def __init__(self, message="form_buf in move_all_packet() can not be black hole"):
+        self.message = message
+        super().__init__(self.message)
+
+
     
 # sleep control
 def sleep_ms(duration:int):
     time.sleep(duration / 1000)
+  
+simulate_start_time:int = int(time.time() * 1000)
     
 # clock
 def now_ms():
-    return int(time.time() * 1000) - config.simulate_start_time
+    return int(time.time() * 1000) - simulate_start_time
     
 
 class Buffer:
+    
+    @staticmethod
+    def move_all_packet(from_buf:"Buffer", to_buf:"Buffer", buffer_limit:bool = True):
+        if(from_buf.buf_type == "black_hole"):
+            raise BlackHoleError()
+        if(to_buf.pack_num + from_buf.pack_num > to_buf.capacity and to_buf.buf_type != "black_hole" and buffer_limit):
+            raise BufferError(f"From {from_buf.name} to {to_buf.name}, {to_buf.name} overflow.")
+        pack_num:int = from_buf.pack_num
+        from_buf.remove_all()
+        from_buf.record_one()
+        to_buf.add(pack_num)
+        to_buf.record_one()
         
-    def __init__(self,capacity:int = 100, pack_num:int = 0, name:str = "unknown"):
+    
+    @staticmethod
+    def move_packet(from_buf:"Buffer", to_buf:"Buffer", pack_num:int, buffer_limit:bool = True):
+        if(from_buf.pack_num < pack_num and from_buf.buf_type != "black_hole" and buffer_limit):
+            raise BufferError(f"From {from_buf.name} to {to_buf.name}, {from_buf.name} has negative amount of packet.")
+        if(to_buf.pack_num + pack_num > to_buf.capacity and to_buf.buf_type != "black_hole" and buffer_limit):
+            raise BufferError(f"From {from_buf.name} to {to_buf.name}, {to_buf.name} overflow.")
+        from_buf.remove(pack_num)
+        from_buf.record_one()
+        to_buf.add(pack_num)
+        to_buf.record_one()
+    
+        
+    def __init__(self,capacity:int = 100, pack_num:int = 0, name:str = "unknown", buf_type:str = "normal"):
         self.name:str = name
         self.capacity = capacity
+        self.buf_type:str = buf_type
         self.pack_num:int = pack_num
         self.time_list = [0]
         self.pack_num_list = [pack_num]
@@ -43,12 +80,17 @@ class Buffer:
 
     def remove(self, num:int):
         self.pack_num = self.pack_num - num
-        self.pack_num_list.append(self.pack_num)
-        self.time_list.append(now_ms())
+
     
     def remove_all(self):
         self.pack_num = 0
-        self.pack_num_list.append(0)
+
+    
+    def get_pack_num(self):
+        return self.pack_num
+    
+    def record_one(self):
+        self.pack_num_list.append(self.pack_num)
         self.time_list.append(now_ms())
 
     def gen_log(self):
@@ -59,37 +101,65 @@ class Buffer:
         plt.grid(True)
         plt.title(f"packets in buffer {self.name}")
         plt.show()
+        
+class BlackHoleBuffer(Buffer):
+        
+    def __init__(self):
+        super().__init__()
+        self.buf_type = "black_hole"
+    
+    def add(self, place_holder):
+        pass
+    
+    def remove(self, place_holder):
+        pass
+    
+    def remove_all():
+        pass
+    
+    def record_one():
+        pass
 
-    def getSize(self):
-        return self.pack_num
+
 
 class Application:
     
-    def __init__(self ,buf:Buffer, time_loc:int, time_scale:int, packet_loc:int, packet_scale:int, name:str = "unknown_app"):
+    def __init__(self ,app_buf:Buffer, ker_buf:Buffer, time_loc:int, time_scale:int, packet_loc:int, packet_scale:int, name:str = "unknown_app"):
         self.name = name
-        self.buf:Buffer = buf
+        self.app_buf:Buffer = app_buf
+        self.ker_bufLBuffer = ker_buf
         self.time_loc:int = time_loc
         self.time_scale:int = time_scale
         self.packet_loc:int  = packet_loc
         self.packet_scale:int = packet_scale
         
-    def start(self, duration:int):
-        self.duration:int = duration
+    def start_t(self, end_time:int):
+        self.end_time:int = end_time
+        
+    def set_call_ker_buf(self, time_interval:int):
+        while(now_ms() < self.end_time):
+            
+            sleep_ms(time_interval)
+            
+        
+    def set_use_app_buf(self):
         now:int = 0
         next_wait = []
         next_consume = []
-        while(now < duration):
+        while(now < self.end_time):
             next_wait = int(np.random.normal(self.time_loc, self.time_scale, 1)[0])
             next_consume = int(np.round(np.random.normal(self.packet_loc, self.packet_scale, 1)[0]))
             sleep_ms(next_wait)
             now = now + next_wait
-            self.buf.remove(next_consume)
+            self.app_buf.remove(next_consume)
             print(f"now: {now}")
             print(f"app consume {next_consume} packets")
-            print(f"there are still {self.buf.getSize()} packet in buf")
+            print(f"there are still {self.app_buf.getSize()} packet in app_buf")
 
 
-            
+print("sdfsdf")
+black_hole = BlackHoleBuffer()
+    
             
             
             
