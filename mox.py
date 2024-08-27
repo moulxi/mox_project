@@ -1,6 +1,7 @@
 import numpy as np
 import time
 import math
+import threading
 import matplotlib.pyplot as plt
 
 # exception definition
@@ -27,6 +28,7 @@ class BlackHoleError(Exception):
 
 
 SIMULATE_START_TIME:int = int(time.time() * 1000)
+
     
 # sleep control
 def sleep_ms(duration:int):
@@ -45,29 +47,40 @@ def sleep_until_ms(wake_up_time:int, basetime:int = SIMULATE_START_TIME):
 
 class Buffer:
     
+    
     @staticmethod
-    def move_all_packet(from_buf:"Buffer", to_buf:"Buffer", buffer_limit:bool = True):
+    def move_all_packet(from_buf:"Buffer", to_buf:"Buffer", buf_limit:bool = True):
         if(from_buf.buf_type == "black_hole"):
             raise BlackHoleError()
-        if(to_buf.pack_num + from_buf.pack_num > to_buf.capacity and to_buf.buf_type != "black_hole" and buffer_limit):
+        if(to_buf.pack_num + from_buf.pack_num > to_buf.capacity and to_buf.buf_type != "black_hole" and buf_limit):
             raise BufferError(f"From {from_buf.name} to {to_buf.name}, {to_buf.name} overflow.")
         pack_num:int = from_buf.pack_num
         from_buf.remove_all()
-        from_buf.record_one()
         to_buf.add(pack_num)
-        to_buf.record_one()
+ 
         
     
     @staticmethod
-    def move_packet(from_buf:"Buffer", to_buf:"Buffer", pack_num:int, buffer_limit:bool = True):
-        if(from_buf.pack_num < pack_num and from_buf.buf_type != "black_hole" and buffer_limit):
+    def move_packet(from_buf:"Buffer", to_buf:"Buffer", pack_num:int, buf_limit:bool = True):
+        if(from_buf.pack_num < pack_num and from_buf.buf_type != "black_hole" and buf_limit):
             raise BufferError(f"From {from_buf.name} to {to_buf.name}, {from_buf.name} has negative amount of packet.")
-        if(to_buf.pack_num + pack_num > to_buf.capacity and to_buf.buf_type != "black_hole" and buffer_limit):
+        if(to_buf.pack_num + pack_num > to_buf.capacity and to_buf.buf_type != "black_hole" and buf_limit):
             raise BufferError(f"From {from_buf.name} to {to_buf.name}, {to_buf.name} overflow.")
         from_buf.remove(pack_num)
-        from_buf.record_one()
         to_buf.add(pack_num)
-        to_buf.record_one()
+
+        
+    @staticmethod
+    def draw_plt(buf_list:"list[Buffer]"):
+        plt.figure(figsize=(10, 6))
+        plt.xlabel('time(ms)')
+        plt.ylabel('#packet')
+        plt.xlim(0, 5000)
+        for buf in buf_list:
+            plt.plot(np.array(buf.time_list), np.array(buf.pack_num_list), label = buf.name)
+        plt.grid(True)
+        plt.title(f"packets in buffers")
+        plt.show()
     
         
     def __init__(self,capacity:int = 100, pack_num:int = 0, name:str = "unknown", buf_type:str = "normal"):
@@ -77,27 +90,33 @@ class Buffer:
         self.pack_num:int = pack_num
         self.time_list = [0]
         self.pack_num_list = [pack_num]
+        self.buf_op_lock = threading.Lock()
+
 
     def add(self, num:int):
-        self.pack_num = self.pack_num + num
-        self.pack_num_list.append(self.pack_num)
-        self.time_list.append(now_ms())
+        with self.buf_op_lock:
+            self.pack_num = self.pack_num + num
+            self.record_one()
+
 
     def remove(self, num:int):
-        self.pack_num = self.pack_num - num
-
+        with self.buf_op_lock:
+            self.pack_num = self.pack_num - num
+            self.record_one()
     
     def remove_all(self):
-        self.pack_num = 0
+        with self.buf_op_lock:
+            self.pack_num = 0
+            self.record_one()
 
     
     def get_pack_num(self):
         return self.pack_num
     
     def record_one(self):
-        self.pack_num_list.append(self.pack_num)
-        self.time_list.append(now_ms())
-        print(f"{self.__class__.__name__} --- time:{self.time_list[-1]} --- pack:{self.pack_num_list[-1]}")
+            self.pack_num_list.append(self.pack_num)
+            self.time_list.append(now_ms())
+            print(f"{self.name} --- time:{self.time_list[-1]} --- pack:{self.pack_num_list[-1]}")
 
     def gen_log(self):
         plt.figure(figsize=(10, 6))
@@ -113,6 +132,7 @@ class BlackHoleBuffer(Buffer):
     def __init__(self):
         super().__init__()
         self.buf_type = "black_hole"
+        self.name = "BLACK_HOLE"
     
     def add(self, place_holder):
         pass
@@ -130,13 +150,13 @@ BLACK_HOLE = BlackHoleBuffer()
 
 class Application:
     
-    def __init__(self ,app_buf:Buffer, time_loc:int, time_scale:int, packet_loc:int, packet_scale:int, name:str = "unknown_app"):
+    def __init__(self ,app_buf:Buffer, time_loc:int, time_scale:int, pkt_loc:int, pkt_scale:int, name:str = "unknown_app"):
         self.name = name
         self.app_buf:Buffer = app_buf
         self.time_loc:int = time_loc
         self.time_scale:int = time_scale
-        self.packet_loc:int  = packet_loc
-        self.packet_scale:int = packet_scale
+        self.pkt_loc:int  = pkt_loc
+        self.pkt_scale:int = pkt_scale
         
         
     def ready(self, start_time:int, end_time:int, basetime:int = SIMULATE_START_TIME):
@@ -146,7 +166,7 @@ class Application:
         sleep_until_ms(wake_up_time = start_time, basetime = basetime)
         while(now_ms() < end_time):
             next_wait = int(np.random.normal(self.time_loc, self.time_scale, 1)[0])
-            next_consume = int(np.round(np.random.normal(self.packet_loc, self.packet_scale, 1)[0]))
+            next_consume = int(np.round(np.random.normal(self.pkt_loc, self.pkt_scale, 1)[0]))
             sleep_ms(next_wait)
             now = now + next_wait
             Buffer.move_packet(self.app_buf, BLACK_HOLE, next_consume)
