@@ -148,6 +148,18 @@ class BlackHoleBuffer(Buffer):
 
 BLACK_HOLE = BlackHoleBuffer()
 
+class Scheduler:
+    
+    @staticmethod
+    def next_send(buffers:list[Buffer], algo:str):
+        if(algo == "few_pkt_num_first"):
+            next_send_buf:Buffer = min(buffers, key=lambda buf: buf.pack_num)
+            return next_send_buf
+        elif(algo == "pure_random"):
+            random_num:int = np.random.randint(0, len(buffers), 1)[0]
+            return buffers[random_num]
+        
+
 class Application:
     
     def __init__(self ,app_buf:Buffer, time_loc:int, time_scale:int, pkt_loc:int, pkt_scale:int, name:str = "unknown_app"):
