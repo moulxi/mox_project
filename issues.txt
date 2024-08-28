@@ -1,0 +1,7 @@
+Known issue
+
+1. sleep delay error should be check.
+
+2. Deal with the logic of buffer limit (not just raise exceptions)
+
+3. Normalize the the times (time system is a mess in code now) 

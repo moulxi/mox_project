@@ -93,7 +93,7 @@ class Buffer:
         plt.ylabel('#packet')
         plt.xlim(0, 5000)
         for buf in buf_list:
-            plt.plot(np.array(buf.time_list), np.array(buf.pack_num_list), label = buf.name)
+            plt.plot(np.array(buf.time_list), np.array(buf.pack_num_list), drawstyle="steps-post",label = buf.name)
         plt.grid(True)
         plt.title(f"packets in buffers")
         plt.show()
