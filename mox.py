@@ -3,6 +3,7 @@ import time
 import math
 import threading
 import matplotlib.pyplot as plt
+from queue import Queue
 
 # exception definition
 class MoxError(Exception):
@@ -28,6 +29,7 @@ class BlackHoleError(Exception):
 
 
 SIMULATE_START_TIME:int = int(time.time() * 1000)
+SIMULATE_DURATION:int = 5000
 
     
 # sleep control
@@ -39,10 +41,25 @@ def now_ms(basetime:int = SIMULATE_START_TIME):
     return int(time.time() * 1000) - basetime
 
 def sleep_until_ms(wake_up_time:int, basetime:int = SIMULATE_START_TIME):
-    sleep_ms(wake_up_time - now_ms(basetime))    
+    #print(f"wake_up_time : {wake_up_time}, now_ms(basetime) = {now_ms(basetime)}")
+    if(wake_up_time > now_ms(basetime)):
+        sleep_ms(wake_up_time - now_ms(basetime))    
 
 
+class PacketError(Exception):
+    def __init__(self, message="Packet belong to unknown app"):
+        self.message = message
+        super().__init__(self.message)
 
+class Packet:
+
+    def __init__(self, app:str = None, ack:bool = False, rwnd:int = 0):
+        self.ack:bool = ack
+        if(app == None):
+            raise PacketError(message = "Packet belong to unknown app")
+        self.app:str = app
+        self.rwnd = rwnd
+        
     
 
 class Buffer:
@@ -58,7 +75,6 @@ class Buffer:
         from_buf.remove_all()
         to_buf.add(pack_num)
  
-        
     
     @staticmethod
     def move_packet(from_buf:"Buffer", to_buf:"Buffer", pack_num:int, buf_limit:bool = True):
@@ -84,14 +100,25 @@ class Buffer:
     
         
     def __init__(self,capacity:int = 100, pack_num:int = 0, name:str = "unknown", buf_type:str = "normal"):
+        
+        # basic init
         self.name:str = name
         self.capacity = capacity
         self.buf_type:str = buf_type
         self.pack_num:int = pack_num
+        
+        # for log 
         self.time_list = [0]
         self.pack_num_list = [pack_num]
         self.buf_op_lock = threading.Lock()
 
+        # packet box
+        self.pkt_box = Queue()
+        
+    def set_downstream(self, downstream_buf:"Buffer"):
+        self.downstream_buf:Buffer = downstream_buf
+        
+        
 
     def add(self, num:int):
         with self.buf_op_lock:
@@ -147,19 +174,32 @@ class BlackHoleBuffer(Buffer):
         pass
 
 BLACK_HOLE = BlackHoleBuffer()
-
-class Scheduler:
-    
-    @staticmethod
-    def next_send(buffers:list[Buffer], algo:str):
-        if(algo == "few_pkt_num_first"):
-            next_send_buf:Buffer = min(buffers, key=lambda buf: buf.pack_num)
-            return next_send_buf
-        elif(algo == "pure_random"):
-            random_num:int = np.random.randint(0, len(buffers), 1)[0]
-            return buffers[random_num]
         
+        
+class Switch:
+    
+    def __init__(self, buf_list:list[Buffer], pkt_loc:int, time_loc:int):
+        self.buf_list = buf_list
+        self.pkt_loc = pkt_loc
+        self.time_loc = time_loc
+        
+    def schedule(self, policy:str):
+        selected_buf:Buffer = self.buf_list[0]
+        if(policy == "local_max_buf_first"):
+            for i in range(len(self.buf_list)):
+                if(self.buf_list[i].pack_num > selected_buf.pack_num):
+                    selected_buf = self.buf_list[i]
+        return selected_buf
+        
+    def ready(self, policy:str):
+        while(now_ms() < SIMULATE_DURATION): # for whole simulation
+            sleep_ms(self.time_loc)
+            selected_buf:Buffer = self.schedule(policy = policy)
+            Buffer.move_packet(selected_buf, selected_buf.downstream_buf, self.pkt_loc)
 
+            
+        
+# Application : generating or comsuming packets to the specific buffer (not switch scale) 
 class Application:
     
     def __init__(self ,app_buf:Buffer, time_loc:int, time_scale:int, pkt_loc:int, pkt_scale:int, name:str = "unknown_app"):
@@ -171,17 +211,25 @@ class Application:
         self.pkt_scale:int = pkt_scale
         
         
-    def ready(self, start_time:int, end_time:int, basetime:int = SIMULATE_START_TIME):
+    def ready(self, action:str, start_time:int, end_time:int, basetime:int = SIMULATE_START_TIME):
         now:int = 0
         next_wait = []
-        next_consume = []
+        next_pkt_change = []
         sleep_until_ms(wake_up_time = start_time, basetime = basetime)
-        while(now_ms() < end_time):
-            next_wait = int(np.random.normal(self.time_loc, self.time_scale, 1)[0])
-            next_consume = int(np.round(np.random.normal(self.pkt_loc, self.pkt_scale, 1)[0]))
-            sleep_ms(next_wait)
-            now = now + next_wait
-            Buffer.move_packet(self.app_buf, BLACK_HOLE, next_consume)
+        if(action == "consume"):
+            while(now_ms() < end_time):
+                next_wait = int(np.random.normal(self.time_loc, self.time_scale, 1)[0])
+                next_pkt_change = int(np.round(np.random.normal(self.pkt_loc, self.pkt_scale, 1)[0]))
+                sleep_ms(next_wait)
+                now = now + next_wait
+                Buffer.move_packet(self.app_buf, BLACK_HOLE, next_pkt_change, False)
+        elif(action == "generate"):
+            while(now_ms() < end_time):
+                next_wait = int(np.random.normal(self.time_loc, self.time_scale, 1)[0])
+                next_pkt_change = int(np.round(np.random.normal(self.pkt_loc, self.pkt_scale, 1)[0]))
+                sleep_ms(next_wait)
+                now = now + next_wait
+                Buffer.move_packet(BLACK_HOLE, self.app_buf, next_pkt_change, False)
             
             
         
