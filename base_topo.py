@@ -2,6 +2,10 @@ import mox
 import threading
 import time
 
+# sender   |    s1    |   consumer
+#---------------------------------
+#  ap1 ----| s1_buf1  | --- a1_buf
+#  ap2 ----| s1_buf2  | --- a2_buf
 
 mox.SIMULATE_DURATION = 5000
 

@@ -152,6 +152,7 @@ class Switch:
         self.pkt_loc = pkt_loc
         self.time_loc = time_loc
         
+        
     def schedule(self, policy:str):
         selected_buf:Buffer = self.buf_list[0]
         if(policy == "local_max_buf_first"):
