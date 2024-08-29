@@ -3,7 +3,7 @@ import time
 import math
 import threading
 import matplotlib.pyplot as plt
-from queue import Queue
+from colorama import init, Fore, Back, Style
 
 # exception definition
 class MoxError(Exception):
@@ -45,45 +45,43 @@ def sleep_until_ms(wake_up_time:int, basetime:int = SIMULATE_START_TIME):
     if(wake_up_time > now_ms(basetime)):
         sleep_ms(wake_up_time - now_ms(basetime))    
 
-
-class PacketError(Exception):
-    def __init__(self, message="Packet belong to unknown app"):
-        self.message = message
-        super().__init__(self.message)
-
-class Packet:
-
-    def __init__(self, app:str = None, ack:bool = False, rwnd:int = 0):
-        self.ack:bool = ack
-        if(app == None):
-            raise PacketError(message = "Packet belong to unknown app")
-        self.app:str = app
-        self.rwnd = rwnd
         
-    
+buf_op_lock = threading.Lock()
 
 class Buffer:
     
-    
+
+    @staticmethod
+    def move_packet(from_buf:"Buffer", to_buf:"Buffer", pack_num:int, buf_limit:bool = True):
+        
+        if(from_buf.buf_type != "black_hole"):
+            if(from_buf.pack_num < pack_num and buf_limit):
+                raise BufferError(f"From {from_buf.name} to {to_buf.name}, {from_buf.name} has negative amount of packet.")
+        if(to_buf.buf_type != "black_hole"):
+            if(to_buf.pack_num + pack_num > to_buf.capacity and buf_limit):
+                raise BufferError(f"From {from_buf.name} to {to_buf.name}, {to_buf.name} overflow.")
+        
+        with buf_op_lock:
+            
+            action_time:int = now_ms()
+            
+            # remove packets from from_buf 
+            from_buf.pack_num = from_buf.pack_num - pack_num
+            from_buf.pack_num_list.append(from_buf.pack_num)
+            from_buf.time_list.append(action_time)
+            
+            # add packets to to_buf
+            to_buf.pack_num = to_buf.pack_num + pack_num
+            to_buf.pack_num_list.append(to_buf.pack_num)
+            to_buf.time_list.append(action_time)
+        
+        
     @staticmethod
     def move_all_packet(from_buf:"Buffer", to_buf:"Buffer", buf_limit:bool = True):
         if(from_buf.buf_type == "black_hole"):
             raise BlackHoleError()
-        if(to_buf.pack_num + from_buf.pack_num > to_buf.capacity and to_buf.buf_type != "black_hole" and buf_limit):
-            raise BufferError(f"From {from_buf.name} to {to_buf.name}, {to_buf.name} overflow.")
-        pack_num:int = from_buf.pack_num
-        from_buf.remove_all()
-        to_buf.add(pack_num)
- 
-    
-    @staticmethod
-    def move_packet(from_buf:"Buffer", to_buf:"Buffer", pack_num:int, buf_limit:bool = True):
-        if(from_buf.pack_num < pack_num and from_buf.buf_type != "black_hole" and buf_limit):
-            raise BufferError(f"From {from_buf.name} to {to_buf.name}, {from_buf.name} has negative amount of packet.")
-        if(to_buf.pack_num + pack_num > to_buf.capacity and to_buf.buf_type != "black_hole" and buf_limit):
-            raise BufferError(f"From {from_buf.name} to {to_buf.name}, {to_buf.name} overflow.")
-        from_buf.remove(pack_num)
-        to_buf.add(pack_num)
+        Buffer.move_packet(from_buf, to_buf, pack_num = from_buf.pack_num, buf_limit = buf_limit)
+        
 
         
     @staticmethod
@@ -91,7 +89,7 @@ class Buffer:
         plt.figure(figsize=(10, 6))
         plt.xlabel('time(ms)')
         plt.ylabel('#packet')
-        plt.xlim(0, 5000)
+        plt.xlim(0, SIMULATE_DURATION)
         for buf in buf_list:
             plt.plot(np.array(buf.time_list), np.array(buf.pack_num_list), drawstyle="steps-post",label = buf.name)
         plt.grid(True)
@@ -110,49 +108,11 @@ class Buffer:
         # for log 
         self.time_list = [0]
         self.pack_num_list = [pack_num]
-        self.buf_op_lock = threading.Lock()
-
-        # packet box
-        self.pkt_box = Queue()
+        
         
     def set_downstream(self, downstream_buf:"Buffer"):
         self.downstream_buf:Buffer = downstream_buf
-        
-        
-
-    def add(self, num:int):
-        with self.buf_op_lock:
-            self.pack_num = self.pack_num + num
-            self.record_one()
-
-
-    def remove(self, num:int):
-        with self.buf_op_lock:
-            self.pack_num = self.pack_num - num
-            self.record_one()
     
-    def remove_all(self):
-        with self.buf_op_lock:
-            self.pack_num = 0
-            self.record_one()
-
-    
-    def get_pack_num(self):
-        return self.pack_num
-    
-    def record_one(self):
-            self.pack_num_list.append(self.pack_num)
-            self.time_list.append(now_ms())
-            print(f"{self.name} --- time:{self.time_list[-1]} --- pack:{self.pack_num_list[-1]}")
-
-    def gen_log(self):
-        plt.figure(figsize=(10, 6))
-        plt.xlabel('time(ms)')
-        plt.ylabel('#packet')
-        plt.plot(np.array(self.time_list), np.array(self.pack_num_list), label='number of packets in the buffer')
-        plt.grid(True)
-        plt.title(f"packets in buffer {self.name}")
-        plt.show()
         
 class BlackHoleBuffer(Buffer):
         
@@ -161,17 +121,6 @@ class BlackHoleBuffer(Buffer):
         self.buf_type = "black_hole"
         self.name = "BLACK_HOLE"
     
-    def add(self, place_holder):
-        pass
-    
-    def remove(self, place_holder):
-        pass
-    
-    def remove_all():
-        pass
-    
-    def record_one(place_holder):
-        pass
 
 BLACK_HOLE = BlackHoleBuffer()
         
@@ -212,6 +161,13 @@ class Application:
         
         
     def ready(self, action:str, start_time:int, end_time:int, basetime:int = SIMULATE_START_TIME):
+        if(start_time > SIMULATE_DURATION):
+            start_time = SIMULATE_DURATION
+            print(f"{Fore.MAGENTA} WARNING : {self.name} start_time exceeded SIMULATE_DURATION, set it to SIMULATE_DURATION {Style.RESET_ALL}")
+        if(end_time > SIMULATE_DURATION):
+            end_time = SIMULATE_DURATION
+            print(f"{Fore.MAGENTA} WARNING : {self.name} end_time exceeded SIMULATE_DURATION, set it to SIMULATE_DURATION {Style.RESET_ALL}")
+        
         now:int = 0
         next_wait = []
         next_pkt_change = []
@@ -237,15 +193,4 @@ class Application:
 
 
 
-
-            
-            
-            
-            
-            
-            
-        
-        
-
-    
     

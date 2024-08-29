@@ -3,6 +3,8 @@ import threading
 import time
 
 
+mox.SIMULATE_DURATION = 2000
+
 # switch1 with two buffers inside
 s1_buf1 = mox.Buffer(pack_num = 800, capacity = 2000, name = "s1_buf1")
 s1_buf2 = mox.Buffer(pack_num = 400, capacity = 2000, name = "s1_buf2")
