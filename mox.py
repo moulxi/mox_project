@@ -48,18 +48,20 @@ def sleep_until_ms(wake_up_time:int, basetime:int = SIMULATE_START_TIME):
         
 buf_op_lock = threading.Lock()
 
+
 class Buffer:
     
+    max_capacity:int = 0
 
     @staticmethod
     def move_packet(from_buf:"Buffer", to_buf:"Buffer", pack_num:int, buf_limit:bool = True):
         
         if(from_buf.buf_type != "black_hole"):
             if(from_buf.pack_num < pack_num and buf_limit):
-                raise BufferError(f"From {from_buf.name} to {to_buf.name}, {from_buf.name} has negative amount of packet.")
+                raise BufferError(f"{Fore.RED} From {from_buf.name} to {to_buf.name}, {from_buf.name} has negative amount of packet.{Style.RESET_ALL}")
         if(to_buf.buf_type != "black_hole"):
             if(to_buf.pack_num + pack_num > to_buf.capacity and buf_limit):
-                raise BufferError(f"From {from_buf.name} to {to_buf.name}, {to_buf.name} overflow.")
+                raise BufferError(f" {Fore.RED} From {from_buf.name} to {to_buf.name}, {to_buf.name} overflow.{Style.RESET_ALL}")
         
         with buf_op_lock:
             
@@ -85,17 +87,28 @@ class Buffer:
 
         
     @staticmethod
-    def draw_plt(buf_list:"list[Buffer]"):
+    def draw_plt(buf_list:"list[Buffer]", ylim:int = None):
+        if(ylim == None):
+            ylim = int(Buffer.max_capacity * 1.1)
         plt.figure(figsize=(10, 6))
         plt.xlabel('time(ms)')
         plt.ylabel('#packet')
         plt.xlim(0, SIMULATE_DURATION)
+        plt.ylim(0,  ylim)
         for buf in buf_list:
-            plt.plot(np.array(buf.time_list), np.array(buf.pack_num_list), drawstyle="steps-post",label = buf.name)
+            plt.plot(np.array(buf.time_list), np.array(buf.pack_num_list), drawstyle="steps-post", label = buf.name, color = buf.color)
+            plt.axhline(y = buf.capacity, color=buf.color, linestyle='--')
         plt.grid(True)
         plt.title(f"packets in buffers")
+        plt.legend(loc='best',fontsize=12)
         plt.show()
-    
+        
+        
+    @staticmethod
+    def set_buf_chain_color(buf_list:"list[Buffer]", buf_color:str):
+        for buf in buf_list:
+            buf.color = buf_color
+        
         
     def __init__(self,capacity:int = 100, pack_num:int = 0, name:str = "unknown", buf_type:str = "normal"):
         
@@ -108,6 +121,13 @@ class Buffer:
         # for log 
         self.time_list = [0]
         self.pack_num_list = [pack_num]
+        
+        # for plt
+        self.color:str = "gray"
+        
+        if(self.capacity > Buffer.max_capacity):
+            Buffer.max_capacity = self.capacity
+        
         
         
     def set_downstream(self, downstream_buf:"Buffer"):
@@ -138,13 +158,20 @@ class Switch:
             for i in range(len(self.buf_list)):
                 if(self.buf_list[i].pack_num > selected_buf.pack_num):
                     selected_buf = self.buf_list[i]
+        elif(policy == "downstream_min_buf_first"):
+            for i in range(len(self.buf_list)):
+                if(self.buf_list[i].downstream_buf.pack_num < selected_buf.downstream_buf.pack_num):
+                    selected_buf = self.buf_list[i]
         return selected_buf
         
     def ready(self, policy:str):
         while(now_ms() < SIMULATE_DURATION): # for whole simulation
             sleep_ms(self.time_loc)
             selected_buf:Buffer = self.schedule(policy = policy)
-            Buffer.move_packet(selected_buf, selected_buf.downstream_buf, self.pkt_loc)
+            pkt_num_to_foward:int = self.pkt_loc
+            if(selected_buf.pack_num < pkt_num_to_foward):
+                pkt_num_to_foward = selected_buf.pack_num
+            Buffer.move_packet(selected_buf, selected_buf.downstream_buf, pkt_num_to_foward)
 
             
         
