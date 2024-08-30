@@ -4,6 +4,7 @@ import math
 import threading
 import matplotlib.pyplot as plt
 from colorama import init, Fore, Back, Style
+from collections import deque
 
 # exception definition
 class MoxError(Exception):
@@ -76,6 +77,10 @@ class Buffer:
             to_buf.pack_num = to_buf.pack_num + pack_num
             to_buf.pack_num_list.append(to_buf.pack_num)
             to_buf.time_list.append(action_time)
+            
+            # input log is used by fifo scheduler
+            to_buf.input_log.append(pack_num)
+            to_buf.input_log_time.append(action_time)
         
         
     @staticmethod
@@ -122,6 +127,12 @@ class Buffer:
         self.time_list = [0]
         self.pack_num_list = [pack_num]
         
+        self.input_log_time = deque()
+        self.input_log_time.append(0)
+        self.input_log = deque()
+        self.input_log.append(pack_num)
+        
+        
         # for plt
         self.color:str = "gray"
         
@@ -159,33 +170,62 @@ class Switch:
             for i in range(len(self.buf_list)):
                 if(self.buf_list[i].pack_num > selected_buf.pack_num):
                     selected_buf = self.buf_list[i]
+                    
         elif(policy == "downstream_min_buf_first"):
             for i in range(len(self.buf_list)):
                 if(self.buf_list[i].downstream_buf.pack_num < selected_buf.downstream_buf.pack_num):
                     selected_buf = self.buf_list[i]
+                    
+        elif(policy == "fifo"):
+            min_time_buf:Buffer = self.buf_list[0]
+            for buf in self.buf_list:
+                if(buf.input_log_time):
+                    if(buf.input_log_time[0] < min_time_buf.input_log_time[0]):
+                        min_time_buf = buf
+            selected_buf = min_time_buf
+
+        
+        elif(policy == "manual_p"):
+            options:list[int] = []
+            for i in range(len(self.buf_list)):
+                options.append(i)
+            result = np.random.choice(options, p = [0.5, 0.5])
+            selected_buf = self.buf_list[result]
+            
         return selected_buf
         
-    def ready(self, policy:str):
+    def ready(self, policy:str = "fifo", start_time:int = 0):
+        sleep_until_ms(start_time)
         while(now_ms() < SIMULATE_DURATION): # for whole simulation
             sleep_ms(self.time_loc)
-            selected_buf:Buffer = self.schedule(policy = policy)
-            pkt_num_to_foward:int = self.pkt_loc
-            if(selected_buf.pack_num < pkt_num_to_foward):
-                pkt_num_to_foward = selected_buf.pack_num
-            Buffer.move_packet(selected_buf, selected_buf.downstream_buf, pkt_num_to_foward)
+            pkt_num_to_forward:int = self.pkt_loc
+            while(pkt_num_to_forward > 0):
+                #print("111")
+                selected_buf:Buffer = self.schedule(policy = policy)
+                if(selected_buf.pack_num >= 1):
+                    #print("222")
+                    Buffer.move_packet(selected_buf, selected_buf.downstream_buf, 1)
+                    pkt_num_to_forward = pkt_num_to_forward - 1
+                    if(policy == "fifo"):
+                        selected_buf.input_log[0] = selected_buf.input_log[0] - 1
+                        if(selected_buf.input_log[0] == 0):
+                            selected_buf.input_log.popleft()
+                            selected_buf.input_log_time.popleft()
+                        
 
             
         
 # Application : generating or comsuming packets to the specific buffer (not switch scale) 
 class Application:
     
-    def __init__(self ,app_buf:Buffer, time_loc:int, time_scale:int, pkt_loc:int, pkt_scale:int, name:str = "unknown_app"):
+    def __init__(self ,buf:Buffer, time_loc:int, time_scale:int, pkt_loc:int, pkt_scale:int, to_buf:Buffer = None,name:str = "unknown_app"):
         self.name = name
-        self.app_buf:Buffer = app_buf
+        self.buf:Buffer = buf
         self.time_loc:int = time_loc
         self.time_scale:int = time_scale
         self.pkt_loc:int  = pkt_loc
         self.pkt_scale:int = pkt_scale
+        self.to_buf = to_buf
         
         
     def ready(self, action:str, start_time:int, end_time:int, basetime:int = SIMULATE_START_TIME):
@@ -206,14 +246,20 @@ class Application:
                 next_pkt_change = int(np.round(np.random.normal(self.pkt_loc, self.pkt_scale, 1)[0]))
                 sleep_ms(next_wait)
                 now = now + next_wait
-                Buffer.move_packet(self.app_buf, BLACK_HOLE, next_pkt_change, False)
+                Buffer.move_packet(self.buf, BLACK_HOLE, next_pkt_change, False)
         elif(action == "generate"):
             while(now_ms() < end_time):
                 next_wait = int(np.random.normal(self.time_loc, self.time_scale, 1)[0])
                 next_pkt_change = int(np.round(np.random.normal(self.pkt_loc, self.pkt_scale, 1)[0]))
                 sleep_ms(next_wait)
                 now = now + next_wait
-                Buffer.move_packet(BLACK_HOLE, self.app_buf, next_pkt_change, False)
+                Buffer.move_packet(BLACK_HOLE, self.buf, next_pkt_change, False)
+        elif(action == "move_all"):
+            while(now_ms() < end_time):
+                next_wait = int(np.random.normal(self.time_loc, self.time_scale, 1)[0])
+                sleep_ms(next_wait)
+                now = now + next_wait
+                Buffer.move_all_packet(self.buf, self.to_buf, False)
             
             
         
