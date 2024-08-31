@@ -128,9 +128,11 @@ class Buffer:
         self.pack_num_list = [pack_num]
         
         self.input_log_time = deque()
-        self.input_log_time.append(0)
         self.input_log = deque()
-        self.input_log.append(pack_num)
+        
+        if(self.pack_num != 0):
+            self.input_log_time.append(0)
+            self.input_log.append(pack_num)
         
         
         # for plt

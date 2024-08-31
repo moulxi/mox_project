@@ -10,8 +10,8 @@ import time
 mox.SIMULATE_DURATION = 5000
 
 # switch1 with two buffers inside
-s1_buf1 = mox.Buffer(pack_num = 1, capacity = 80, name = "s1_buf1")
-s1_buf2 = mox.Buffer(pack_num = 1, capacity = 100, name = "s1_buf2")
+s1_buf1 = mox.Buffer(pack_num = 0, capacity = 80, name = "s1_buf1")
+s1_buf2 = mox.Buffer(pack_num = 0, capacity = 100, name = "s1_buf2")
 s1 = mox.Switch(buf_list = [s1_buf1, s1_buf2], pkt_loc = 2, time_loc = 20)
 
 # the application which put packet into switch1
