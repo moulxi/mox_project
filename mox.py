@@ -165,7 +165,9 @@ class Switch:
         
         
     def schedule(self, policy:str):
+        
         selected_buf:Buffer = self.buf_list[0]
+        
         if(policy == "local_max_buf_first"):
             for i in range(len(self.buf_list)):
                 if(self.buf_list[i].pack_num > selected_buf.pack_num):
@@ -177,11 +179,18 @@ class Switch:
                     selected_buf = self.buf_list[i]
                     
         elif(policy == "fifo"):
-            min_time_buf:Buffer = self.buf_list[0]
+            min_time_buf:Buffer = None
             for buf in self.buf_list:
                 if(buf.input_log_time):
-                    if(buf.input_log_time[0] < min_time_buf.input_log_time[0]):
+                    if(min_time_buf == None):
                         min_time_buf = buf
+                    elif(buf.input_log_time[0] < min_time_buf.input_log_time[0]):
+                        min_time_buf = buf
+            if(min_time_buf != None):
+                min_time_buf.input_log[0] = min_time_buf.input_log[0] - 1
+                if(min_time_buf.input_log[0] == 0):
+                    min_time_buf.input_log.popleft()
+                    min_time_buf.input_log_time.popleft()
             selected_buf = min_time_buf
 
         
@@ -200,18 +209,12 @@ class Switch:
             sleep_ms(self.time_loc)
             pkt_num_to_forward:int = self.pkt_loc
             while(pkt_num_to_forward > 0):
-                #print("111")
                 selected_buf:Buffer = self.schedule(policy = policy)
-                if(selected_buf.pack_num >= 1):
-                    #print("222")
+                if(selected_buf == None):
+                    print(f"{Fore.MAGENTA} WARNING : Switch scheduler picked \"None\" to forward. Process continued.{Style.RESET_ALL}")
+                elif(selected_buf.pack_num >= 1):
                     Buffer.move_packet(selected_buf, selected_buf.downstream_buf, 1)
                     pkt_num_to_forward = pkt_num_to_forward - 1
-                    if(policy == "fifo"):
-                        selected_buf.input_log[0] = selected_buf.input_log[0] - 1
-                        if(selected_buf.input_log[0] == 0):
-                            selected_buf.input_log.popleft()
-                            selected_buf.input_log_time.popleft()
-                        
 
             
         
@@ -246,7 +249,10 @@ class Application:
                 next_pkt_change = int(np.round(np.random.normal(self.pkt_loc, self.pkt_scale, 1)[0]))
                 sleep_ms(next_wait)
                 now = now + next_wait
-                Buffer.move_packet(self.buf, BLACK_HOLE, next_pkt_change, False)
+                if(self.buf.pack_num < next_pkt_change):
+                    print(f"{Fore.MAGENTA} WARNING : {self.buf.name} doesn't have enough packets to serve {self.name}. Process continue. {Style.RESET_ALL}")
+                    next_pkt_change = self.buf.pack_num
+                Buffer.move_packet(self.buf, BLACK_HOLE, next_pkt_change, True)
         elif(action == "generate"):
             while(now_ms() < end_time):
                 next_wait = int(np.random.normal(self.time_loc, self.time_scale, 1)[0])
