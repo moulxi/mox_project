@@ -59,10 +59,12 @@ class Buffer:
         
         if(from_buf.buf_type != "black_hole"):
             if(from_buf.pack_num < pack_num and buf_limit):
-                raise BufferError(f"{Fore.RED} From {from_buf.name} to {to_buf.name}, {from_buf.name} has negative amount of packet.{Style.RESET_ALL}")
+                pass
+                #raise BufferError(f"{Fore.RED} From {from_buf.name} to {to_buf.name}, {from_buf.name} has negative amount of packet.{Style.RESET_ALL}")
         if(to_buf.buf_type != "black_hole"):
             if(to_buf.pack_num + pack_num > to_buf.capacity and buf_limit):
-                raise BufferError(f" {Fore.RED} From {from_buf.name} to {to_buf.name}, {to_buf.name} overflow.{Style.RESET_ALL}")
+                pass
+                #raise BufferError(f" {Fore.RED} From {from_buf.name} to {to_buf.name}, {to_buf.name} overflow.{Style.RESET_ALL}")
         
         with buf_op_lock:
             
@@ -165,6 +167,11 @@ class Switch:
         self.pkt_loc = pkt_loc
         self.time_loc = time_loc
         
+    def pkt_in_switch(self):
+        for buf in self.buf_list:
+            if buf.pack_num > 0:
+                return True
+        return False
         
     def schedule(self, policy:str):
         
@@ -200,8 +207,12 @@ class Switch:
             options:list[int] = []
             for i in range(len(self.buf_list)):
                 options.append(i)
-            result = np.random.choice(options, p = [0.5, 0.5])
+            result = np.random.choice(options, p = [0.514, 0.486]) # MOX
+            #result = np.random.choice(options, p = [0.6, 0.4]) # FIFO
             selected_buf = self.buf_list[result]
+            
+        else:
+            print(f"{Fore.MAGENTA} WARNING : Unknown schedule policy {Style.RESET_ALL}")
             
         return selected_buf
         
@@ -210,13 +221,15 @@ class Switch:
         while(now_ms() < SIMULATE_DURATION): # for whole simulation
             sleep_ms(self.time_loc)
             pkt_num_to_forward:int = self.pkt_loc
-            while(pkt_num_to_forward > 0):
+            while(pkt_num_to_forward > 0 and self.pkt_in_switch()):
+                print("1")
                 selected_buf:Buffer = self.schedule(policy = policy)
                 if(selected_buf == None):
                     print(f"{Fore.MAGENTA} WARNING : Switch scheduler picked \"None\" to forward. Process continued.{Style.RESET_ALL}")
                 elif(selected_buf.pack_num >= 1):
                     Buffer.move_packet(selected_buf, selected_buf.downstream_buf, 1)
                     pkt_num_to_forward = pkt_num_to_forward - 1
+                    print("2")
 
             
         
